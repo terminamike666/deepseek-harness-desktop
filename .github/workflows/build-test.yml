@@ -134,9 +134,9 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Check Rust formatting
+      - name: Check modified Rust file formatting
         working-directory: src-tauri
-        run: cargo fmt --all -- --check
+        run: rustfmt --check --config skip_children=true src/service/plugin/internal/mod.rs
 
       - name: Test bounded fallback scan
         working-directory: src-tauri

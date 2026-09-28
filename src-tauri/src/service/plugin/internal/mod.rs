@@ -1017,12 +1017,7 @@ fn legacy_fallback_entry_paths(root: &Path) -> Result<Vec<PathBuf>, String> {
                 path.display()
             )
         })?;
-        if metadata.is_dir()
-            && entry
-                .file_name()
-                .to_string_lossy()
-                .starts_with('@')
-        {
+        if metadata.is_dir() && entry.file_name().to_string_lossy().starts_with('@') {
             let scoped = std::fs::read_dir(&path).map_err(|e| {
                 format!(
                     "INTERNAL_PLUGIN_FALLBACK_READ_FAILED: {}: {e}",

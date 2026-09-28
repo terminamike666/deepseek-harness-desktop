@@ -134,6 +134,14 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Check Rust formatting
+        working-directory: src-tauri
+        run: cargo fmt --all -- --check
+
+      - name: Test bounded fallback scan
+        working-directory: src-tauri
+        run: cargo test legacy_fallback_scan_stays_at_direct_dependency_depth --locked
+
       # WiX 只接受纯数字版本；NSIS 仍使用完整 SemVer。
       - name: Prepare MSI version override
         shell: bash

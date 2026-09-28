@@ -136,7 +136,7 @@ jobs:
 
       - name: Check modified Rust file formatting
         working-directory: src-tauri
-        run: rustfmt --check --config skip_children=true src/service/plugin/internal/mod.rs
+        run: rustfmt --edition 2021 --check --config skip_children=true src/service/plugin/internal/mod.rs
 
       - name: Test bounded fallback scan
         working-directory: src-tauri

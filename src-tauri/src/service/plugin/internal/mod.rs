@@ -970,14 +970,39 @@ fn remove_legacy_profile_module_fallback(profile: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// 递归删除旧 fallback 中的 junction，先处理链接本身，不跟随到资源目录。
+/// 删除旧 fallback 中的顶层与 scoped junction，不跟随到包内部依赖。
 fn remove_legacy_fallback_links(root: &Path) -> Result<(), String> {
+    for path in legacy_fallback_entry_paths(root)? {
+        let metadata = std::fs::symlink_metadata(&path).map_err(|e| {
+            format!(
+                "INTERNAL_PLUGIN_FALLBACK_STAT_FAILED: {}: {e}",
+                path.display()
+            )
+        })?;
+        if metadata.file_type().is_symlink()
+            && std::fs::read_link(&path)
+                .ok()
+                .is_some_and(|target| is_legacy_profile_fallback_target(&target))
+        {
+            remove_stale_plugin_entry(&path).map_err(|e| {
+                format!(
+                    "INTERNAL_PLUGIN_FALLBACK_LINK_REMOVE_FAILED: {}: {e}",
+                    path.display()
+                )
+            })?;
+        }
+    }
+    Ok(())
+}
+
+fn legacy_fallback_entry_paths(root: &Path) -> Result<Vec<PathBuf>, String> {
     let entries = std::fs::read_dir(root).map_err(|e| {
         format!(
             "INTERNAL_PLUGIN_FALLBACK_READ_FAILED: {}: {e}",
             root.display()
         )
     })?;
+    let mut paths = Vec::new();
     for entry in entries {
         let entry = entry.map_err(|e| {
             format!(
@@ -992,23 +1017,34 @@ fn remove_legacy_fallback_links(root: &Path) -> Result<(), String> {
                 path.display()
             )
         })?;
-        if metadata.file_type().is_symlink() {
-            if std::fs::read_link(&path)
-                .ok()
-                .is_some_and(|target| is_legacy_profile_fallback_target(&target))
-            {
-                remove_stale_plugin_entry(&path).map_err(|e| {
-                    format!(
-                        "INTERNAL_PLUGIN_FALLBACK_LINK_REMOVE_FAILED: {}: {e}",
-                        path.display()
-                    )
-                })?;
+        if metadata.is_dir()
+            && entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with('@')
+        {
+            let scoped = std::fs::read_dir(&path).map_err(|e| {
+                format!(
+                    "INTERNAL_PLUGIN_FALLBACK_READ_FAILED: {}: {e}",
+                    path.display()
+                )
+            })?;
+            for child in scoped {
+                paths.push(
+                    child
+                        .map_err(|e| {
+                            format!(
+                                "INTERNAL_PLUGIN_FALLBACK_ENTRY_FAILED: {}: {e}",
+                                path.display()
+                            )
+                        })?
+                        .path(),
+                );
             }
-        } else if metadata.is_dir() {
-            remove_legacy_fallback_links(&path)?;
         }
+        paths.push(path);
     }
-    Ok(())
+    Ok(paths)
 }
 
 /// 判断 junction 目标是否属于旧版 profile-local fallback。
@@ -1137,6 +1173,31 @@ mod tests {
         assert!(!is_legacy_profile_fallback_target(
             &base.join(".dsh-module-fallback-old").join("anymatch"),
         ));
+    }
+
+    #[test]
+    fn legacy_fallback_scan_stays_at_direct_dependency_depth() {
+        let root = std::env::temp_dir().join(format!(
+            "dsh-fallback-depth-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let direct = root.join("direct-package");
+        let scope = root.join("@scope");
+        let scoped = scope.join("scoped-package");
+        let nested = direct.join("node_modules").join("nested-package");
+        std::fs::create_dir_all(&scoped).unwrap();
+        std::fs::create_dir_all(&nested).unwrap();
+
+        let paths = legacy_fallback_entry_paths(&root).unwrap();
+
+        assert!(paths.contains(&direct));
+        assert!(paths.contains(&scope));
+        assert!(paths.contains(&scoped));
+        assert!(!paths.contains(&direct.join("node_modules")));
+        assert!(!paths.contains(&nested));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[tokio::test]
